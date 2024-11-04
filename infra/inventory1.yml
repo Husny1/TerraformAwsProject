@@ -1,0 +1,4 @@
+all_servers:
+  hosts:
+    ec2-34-237-145-74.compute-1.amazonaws.com:
+      ansible_host: 34.237.145.74

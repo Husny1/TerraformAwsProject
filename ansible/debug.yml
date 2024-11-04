@@ -1,0 +1,10 @@
+- name: Gather load balancer information
+  hosts: localhost
+  tasks:
+    - name: List load balancers
+      community.aws.elb_info:
+        region: us-east-1
+      register: lb_info
+
+    - debug:
+        var: lb_info

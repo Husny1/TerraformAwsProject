@@ -1,0 +1,205 @@
+## database/ server config 
+- name: configuring database Server / container instance
+  hosts: DBContainer
+  remote_user: ubuntu
+  become: yes
+  gather_facts: yes
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+  tasks:
+    - name: Install requireded system packages for Docker
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+        update_cache: true
+
+    # Node/NPM install 
+    - name: Install the GPG key for Node.js LTS
+      apt_key:
+        url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+        state: present
+
+    - name: Install the Node.js LTS repos
+      apt_repository:
+        repo: "deb https://deb.nodesource.com/node_20.x jammy main"
+        state: present
+        update_cache: yes
+      
+    - name: Install NodeJS
+      apt:
+        name: nodejs
+        state: latest
+## setting up docker dependencies and installing via auth repo 
+    - name: Install Docker dependencies
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: latest
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable"
+        state: present
+        update_cache: yes
+
+    - name: Update apt and install docker-ce
+      apt:
+        name: docker-ce
+        state: latest
+        update_cache: true
+
+## supplied and utilised from consultation session
+## takes the snapshot via location and uploads
+    - name: Upload database snapshot
+      copy:
+        src: ../data/snapshot-prod-data.sql
+        dest: /tmp/snapshot-prod-data.sql # Will be mounted into db container
+
+## supplied and utilised from consultation session
+## network_mode: = host is making the sql db the host 
+## will connect app containers through the private ip of host 
+    - name: Create & run db container
+      community.docker.docker_container:
+        name: "foo_db"
+        image: "postgres:14.7"
+        env:
+          POSTGRES_PASSWORD: "devops"
+          POSTGRES_USER: "pete"
+          POSTGRES_DB: "foo"
+        published_ports:
+        - "0.0.0.0:5432:5432"
+        volumes:
+        - "/tmp/snapshot-prod-data.sql:/docker-entrypoint-initdb.d/init.sql"
+        network_mode: "host"
+
+    - name: Set the private IP of the database server as a fact
+      set_fact:
+        db_private_ip: "{{ ansible_default_ipv4.address }}"
+
+## application server config
+- name: Configure Application Servers
+  hosts: AppContainer
+  remote_user: ubuntu
+  become: yes
+  gather_facts: yes
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+  tasks:
+  ## https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_vars_facts.html
+  ## first validate and check the private ip is retrieved from DBcontainer playbook
+    - name: the database private IP from DBContainer
+      set_fact:
+        db_private_ip: "{{ hostvars[groups['DBContainer'][0]].db_private_ip }}"
+
+    - name: Print the private IP of the database server
+      debug:
+        var: db_private_ip
+
+    - name: Install required system packs for Docker
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+        update_cache: true
+    # Node/NPM install 
+    - name: Install required system packs for node/npm
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: latest
+        update_cache: yes
+
+    - name: Install the GPG key for Node.js LTS
+      apt_key:
+        url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+        state: present
+
+    - name: Install the Node.js LTS repos
+      apt_repository:
+        repo: "deb https://deb.nodesource.com/node_20.x jammy main"
+        state: present
+        update_cache: yes
+
+    - name: Install NodeJS
+      apt:
+        name: nodejs
+        state: latest
+
+    - name: Install Docker dependencies
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: latest
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable"
+        state: present
+        update_cache: yes
+
+    - name: Update apt and install docker-ce
+      apt:
+        name: docker-ce
+        state: latest
+        update_cache: true
+
+## checks to see if the container exist
+## then stops if it is running 
+    - name: Check if foo_app container exists
+      command: docker ps -aq -f name=foo_app
+      register: foo_app_container_id
+      ignore_errors: yes
+
+    - name: stop and remove existing foo_app container if running
+      when: foo_app_container_id.stdout != ""
+      command: docker rm -f foo_app
+      ignore_errors: yes
+
+
+## NOTE USES PRIVATE IP FOR THE DB HOSTNAME 
+## CANNOT CONNECT IF USING ANYTHING ELSE 
+    - name: Run Application container
+      command: >
+        docker run --name foo_app
+        -e PORT=3001
+        -e DB_HOSTNAME={{ db_private_ip }}
+        -e DB_PORT=5432 
+        -e DB_USERNAME=pete
+        -e DB_PASSWORD=devops
+        -p 0.0.0.0:80:3001
+        -d mattcul/assignment2app:1.0.0

@@ -1,0 +1,19 @@
+AppContainer:
+  hosts:
+    ec2-54-159-153-11.compute-1.amazonaws.com:
+      ansible_host: 54.159.153.11
+    ec2-54-205-222-251.compute-1.amazonaws.com:
+      ansible_host: 54.205.222.251
+
+DBContainer:
+  hosts:
+    ec2-3-82-66-91.compute-1.amazonaws.com:
+      ansible_host: 3.82.66.91
+      ansible_private_ip: 10.0.3.97
+
+
+all_servers:
+  children:
+    DBContainer:
+    AppContainer:
+

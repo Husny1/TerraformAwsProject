@@ -1,0 +1,24 @@
+How to build Docker image:
+build first 
+```
+docker buildx build --platform linux/amd64,linux/arm64 -t mattcul/assignment2app:1.0.0 . --push
+```
+
+then to run use TO TEST 
+
+docker run -p 3000:3000 -e PORT=3000 mattcul/assignment2app:1.0.0
+
+
+install postrgess 
+
+docker pull postgres:latest
+
+
+your image 
+
+docker run -p 3000:3000 -e PORT=3000 testimage:latest
+
+
+docker run --name foo_db -e POSTGRES_PASSWORD=devops -e POSTGRES_USER=pete -e POSTGRES_DB=foo -p 0.0.0.0:5432:5432     -v "$PWD"/misc/snapshot-prod-data.sql:/docker-entrypoint-initdb.d/anything.sql -d postgres:14.7
+
+docker run --name foo_app --add-host host.docker.internal:host-gateway -e PORT=3000 -e DB_HOSTNAME=host.docker.internal -e DB_PORT=5432 -e DB_USERNAME=pete -e DB_PASSWORD=devops -p 0.0.0.0:80:3000 -d testimage:latest
