@@ -1,0 +1,88 @@
+name: Deploy Infrastructure and Application
+
+# trigger on push or pull to main
+on:
+  push:
+    branches: "main"
+    ## GitHub Actions REST API
+  workflow_dispatch:
+
+# set up 
+jobs:
+  InfrastructerDeployment:
+    runs-on: ubuntu-latest
+# always run from directory infra
+    defaults:
+      run:
+        working-directory: infra
+      
+    steps:
+      # Checkout the repo
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Terraform CLI 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      # get AWS credentials from GIT Secret
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1 # AWS region info
+          aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY }}"
+          aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          aws-session-token: "${{ secrets.AWS_SESSION_TOKEN }}" # remove this if not using labs acc
+        # List buckets 
+      - name: S3 (List)
+        run: aws s3 ls
+        # Generate SSH key to use for Deployment
+      - name: Create SSH Key Directory
+        run: mkdir -p ~/.ssh
+  
+      - name: Generate SSH Key
+        run: ssh-keygen -t rsa -b 4096 -f ~/.ssh/admin -N ""
+  
+      - name: List SSH Directory Contents
+        run: ls -la ~/.ssh
+  
+      - name: Add EC2 to known hosts
+        run: ssh-keyscan -H ec2.amazonaws.com >> ~/.ssh/known_hosts || true
+      
+        
+      # Initialize Terraform
+      - name: Initialize Terraform
+        run: terraform init
+
+      # Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -input=false -no-color
+
+      # Terraform Apply (only on pushes to the main branch)
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+
+      # Install Ansible and deps 
+      # ready to run playbook
+      - name: Install Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      # Ansible Playbook exec
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook playbook2.yml -i inventory2.yml --private-key ~/.ssh/admin || { echo "Error running Ansible playbook. Exiting."; exit 1; }
+      
+      - name: Terraform destroy
+        run: terraform destroy -auto-approve
+
+      # Clean up SSH key
+      - name: Remove SSH Key
+        run: rm -f ~/.ssh/admin ~/.ssh/admin.pub
+
+
+
+
+
